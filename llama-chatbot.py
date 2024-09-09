@@ -1,4 +1,4 @@
-from components.assets import arrow_circle_icon, github_icon
+from components.assets import arrow_circle_icon
 from components.chat import chat, chat_form, chat_message, chat_messages
 import asyncio
 import modal
@@ -91,25 +91,39 @@ def serve_vllm():
         chat_template=None,  # Adjust if you have a specific chat template
     )
 
-    @web_app.get("/health")
-    async def health():
-        """Health check."""
-        try:
-            await openai_serving_chat.engine.check_health()
-            return fastapi.Response(status_code=200)
-        except Exception as e:
-            return fastapi.Response(content=str(e), status_code=500)
 
     @web_app.get("/v1/completions")
     async def get_completions(prompt: str, max_tokens: int = 100, stream: bool = False):
         request_id = str(uuid.uuid4())
-        sampling_params = SamplingParams(max_tokens=max_tokens)
+        sampling_params = SamplingParams(
+            max_tokens=max_tokens,
+            temperature=0.7,
+            top_p=0.95,
+            stop=["Human:", "\n\n"]
+        )
+        
+        system_prompt = "You are a helpful Irish English translator and tutor. Respond concisely and stay on topic."
+        full_prompt = f"{system_prompt}\n\nHuman: {prompt}\n\nAssistant:"
         
         async def completion_generator() -> AsyncGenerator[str, None]:
             try:
-                async for result in engine.generate(prompt, sampling_params, request_id):
+                full_response = ""
+                async for result in engine.generate(full_prompt, sampling_params, request_id):
                     if len(result.outputs) > 0:
-                        yield result.outputs[0].text
+                        new_text = result.outputs[0].text
+                        if not full_response:  # This is the first chunk
+                            # Remove any part of the system prompt or "Assistant:" that might be generated
+                            new_text = new_text.split("Assistant:")[-1].lstrip()
+                        
+                        # Only yield the new part of the text
+                        new_part = new_text[len(full_response):]
+                        full_response = new_text
+                        
+                        if new_part:
+                            yield new_part
+                        
+                        if full_response.strip().endswith((".", "!", "?")):
+                            break  # Stop if we have a complete sentence
             except Exception as e:
                 yield str(e)
 
@@ -119,7 +133,7 @@ def serve_vllm():
             completion = ""
             async for chunk in completion_generator():
                 completion += chunk
-            return JSONResponse(content={"choices": [{"text": completion}]})
+            return JSONResponse(content={"choices": [{"text": completion.strip()}]})
 
     return web_app
 
@@ -134,9 +148,9 @@ def serve_fasthtml():
     @rt("/")
     async def get():
         return Div(
-            H1("Chat with LLaMA Model"),
+            H1("Chat with Irish English translator and tutor bot"),
             chat(),
-            cls="flex flex-col items-center min-h-screen bg-gray-100",
+            cls="flex flex-col items-center min-h-screen bg-red-100",
         )
 
     @fasthtml_app.ws("/ws")
@@ -145,22 +159,24 @@ def serve_fasthtml():
         await send(chat_form(disabled=True))
         await send(Div(chat_message(len(chat_messages) - 1), id="messages", hx_swap_oob="beforeend"))
 
-        # Correctly pass the prompt in the GET request
         vllm_url = f"https://c123ian--llama-chatbot-serve-vllm.modal.run/v1/completions"
-        response = requests.get(vllm_url, params={"prompt": msg, "max_tokens": 100})
+        response = requests.get(vllm_url, params={"prompt": msg, "max_tokens": 100, "stream": True}, stream=True)
 
         if response.status_code == 200:
-            message = response.json()["choices"][0]["text"]
+            chat_messages.append({"role": "assistant", "content": ""})
+            message_index = len(chat_messages) - 1
+            await send(Div(chat_message(message_index), id="messages", hx_swap_oob="beforeend"))
+            
+            for chunk in response.iter_content(chunk_size=None):
+                if chunk:
+                    text = chunk.decode('utf-8')
+                    chat_messages[message_index]["content"] += text
+                    await send(Span(text, id=f"msg-content-{message_index}", hx_swap_oob="beforeend"))
         else:
             message = "Error: Unable to get response from LLM."
+            chat_messages.append({"role": "assistant", "content": message})
+            await send(Div(chat_message(len(chat_messages) - 1), id="messages", hx_swap_oob="beforeend"))
 
-        chunks = [message[i:i+10] for i in range(0, len(message), 10)]
-        chat_messages.append({"role": "assistant", "content": ""})
-        await send(Div(chat_message(len(chat_messages) - 1), id="messages", hx_swap_oob="beforeend"))
-        for chunk in chunks:
-            chat_messages[-1]["content"] += chunk
-            await send(Span(chunk, id=f"msg-content-{len(chat_messages)-1}", hx_swap_oob="beforeend"))
-            await asyncio.sleep(0.2)
         await send(chat_form(disabled=False))
 
     return fasthtml_app
