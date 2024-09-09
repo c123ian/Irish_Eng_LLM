@@ -24,3 +24,10 @@ modal deploy llama-chatbot.py
 ```
 
 This command tells Modal to deploy both the vLLM server and the FastHTML interface as defined in the script. Modal handles the complexities of serverless deployment, including GPU allocation, scaling, and networking.
+
+
+### note:
+- This is essentially a combination of this template (which just echos back user input) https://github.com/arihanv/fasthtml-modal and Modal Labs [Run an OpenAI-Compatible vLLM Server](https://github.com/modal-labs/modal-examples/blob/main/06_gpu_and_ml/llm-serving/vllm_inference.py) tutorial. 
+- Using OpenAI API's  "/v1/completions" rather then the more apporpriate "/v1/chat/completions", see where code was sourced [here]( https://github.com/vllm-project/vllm/blob/507ef787d85dec24490069ffceacbd6b161f4f72/vllm/entrypoints/openai/api_server.py#L235C1-L247C1)
+- This uses FastHTML's websockest `/ws` rather then [FastHTML SSE](https://github.com/AnswerDotAI/fasthtml-example/blob/main/04_sse/sse_rand_scroll.py)
+- This uses UCCIX-Llama2-13B, you may need to request permission via Huggingface Hub and run the `download_llama.py` script in order to download weights onto a Modla labs Volume (which we call here `/llamas`).
