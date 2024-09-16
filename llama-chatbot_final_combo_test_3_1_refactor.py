@@ -11,7 +11,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Constants
+# Model via Huggingface Hub, will need to run download script if not already stored on Modal /volume
 MODELS_DIR = "/llamas"
 MODEL_NAME = "ReliableAI/UCCIX-Llama2-13B"
 
@@ -42,24 +42,30 @@ fasthtml_app, rt = fast_app(
 
 chat_messages = []
 
-def chat_component(id, placeholder, cls):
-    return lambda disabled=False: globals()[id](
-        type="text" if id == "Input" else None,
-        name="msg" if id == "Input" else None,
-        id=f"msg-{id.lower()}",
-        placeholder=placeholder,
+def chat_input(disabled=False):
+    return Input(
+        type="text",
+        name="msg",
+        id="msg-input",
+        placeholder="Type a message",
         disabled=disabled,
-        cls=f"{cls} {'w-full max-w-xs' if id == 'Input' else ''}"
+        cls="input input-bordered w-full max-w-xs"
     )
 
-chat_input = chat_component("Input", "Type a message", "input input-bordered")
-chat_button = chat_component("Button", None, "btn btn-primary")
+def chat_button(disabled=False):
+    return Button(
+        "Send",
+        id="send-button",
+        disabled=disabled,
+        cls="btn btn-primary"
+    )
 
 def chat_form(disabled=False):
     return Form(
         chat_input(disabled),
         chat_button(disabled),
-        id="form", ws_send=True,
+        id="form",
+        ws_send=True,
         cls="flex gap-2 items-center border-t border-base-300 p-2"
     )
 
